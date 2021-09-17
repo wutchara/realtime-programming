@@ -75,38 +75,30 @@ app.get('/tick-chart-stream/:eventTypes', (req, res) => {
     }
   };
 
-  // var config = {
-  //   responseType: 'stream',
-  //   method: 'get',
-  //   url: 'https://ap-southeast-1-historical-pricing-cdn.refinitiv.com/data/historical-pricing/v1/views/events/V?eventTypes=quote&start=2021-09-15T19:56:00.000000000Z&end=2021-09-16T00:00:00.000000000Z&adjustments=exchangeCorrection,manualCorrection&sessions=normal&id=ODFCRTk0N0QyNjMwOTIyNjI4MDZCODM1MzMwRTVGQzk4RjBGQzBFQzM4RDVCM0FCMzk4MDM3OTQxNDQxNzQ1N3xCODBBNUFCRkVDMjc2OTFDRTg1NTIzOEQzMzg4NzAxQ0JDOTg4MTlFQ0FCOEZEOTU0QTI1NUZGRkIxREJDQkEwfDA=&Expires=1631776214&Signature=dUntDWeBeEZs8OG342qhOMsuBtVVvlHV7tUoB49WcLBx0AXeFgkC+jTPkZFIRS/NbyNhVuwqFblgyj3V3Vc9ybROj2orf5inYuUFs5712v0OlUlWQLzMwL0JiXCif447Qab6yHbVkeAlNWS684DOSbIQ5t9oMaXnFon2BHpbMvB2170B3bJYkdLMXCDh0buLvCwm91I3RNdaTtHELgb3dNPJ470E6V5OIIXwH0qj+3ou7YBgU9siaW3FpvmphoA8C2dS3cWrmSKSylg2ngqnwcd45EsnfCVVSk6MQ8+7K7Q2ErDnT0xaYNxjrflWbDyT4NecTPIY+nUTtM5nQYRkyg==&Key-Pair-Id=APKAIYN64QKL2EVZPL2Q',
-  // };
-
-  
-
-  const urlReceiver = new Transform({
-    readableObjectMode: true,
+  // const urlReceiver = new Transform({
+  //   readableObjectMode: true,
     
-    transform(chunk, encoding, callback) {
-      console.log('chunk => urlReceiver', chunk.toString());
-      this.push(chunk.toString());
-      callback();
-    }
-  });
+  //   transform(chunk, encoding, callback) {
+  //     console.log('chunk => urlReceiver', chunk.toString());
+  //     this.push(chunk.toString());
+  //     callback();
+  //   }
+  // });
 
-  const arrayToObject = new Transform({
-    readableObjectMode: true,
-    writableObjectMode: true,
+  // const arrayToObject = new Transform({
+  //   readableObjectMode: true,
+  //   writableObjectMode: true,
     
-    transform(chunk, encoding, callback) {
-      // let allStr = '';
-      // for(let i=0; i < chunk.length; i++) {
-      //   allStr += chunk[i];
-      // }
-      console.log('chunk => arrayToObject', chunk);
-      this.push(chunk);
-      callback();
-    }
-  });
+  //   transform(chunk, encoding, callback) {
+  //     // let allStr = '';
+  //     // for(let i=0; i < chunk.length; i++) {
+  //     //   allStr += chunk[i];
+  //     // }
+  //     console.log('chunk => arrayToObject', chunk);
+  //     this.push(chunk);
+  //     callback();
+  //   }
+  // });
 
   axios(config)
   .then(function (response) {
@@ -162,6 +154,9 @@ app.get('/tick-chart-stream/:eventTypes', (req, res) => {
       return new Promise((resolve, reject) => {
         stream.on('data', (chunk) => {
           console.log('<streamToString>', 'data');
+          // TODO: For multiple time response
+          res.write(chunk.toString('utf8'));
+          res.write('\r\n----------------------------------\r\n');
           chunks.push(Buffer.from(chunk))
         });
         stream.on('error', (err) => {
@@ -175,7 +170,11 @@ app.get('/tick-chart-stream/:eventTypes', (req, res) => {
       })
     }
 
-    streamToString(response.data).then(result => res.json(JSON.parse(result)));
+    // TODO: For one time response
+    // streamToString(response.data).then(result => res.json(JSON.parse(result)));
+
+    // TODO: For multiple time response
+    streamToString(response.data).then(r => res.end());
   })
   .catch(function (error) {
     console.log('<stream>', error);
