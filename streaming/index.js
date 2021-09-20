@@ -4,9 +4,18 @@
 // const finished = promisify(stream.finished);
 const { Transform } = require('stream');
 const express = require('express')
+const socketio = require('socket.io')
 const app = express()
 const port = 8080
 let token = '';
+
+app.set('view engine', 'ejs')
+app.use(express.static('public'))
+
+// WEB UI
+app.get('/ui/', (req, res) => {
+  res.render('index')
+})
 
 const fs = require('fs')
 try {
@@ -52,7 +61,7 @@ app.get('/tick-chart', (req, res) => {
   // res.send('Hello World!')
 })
 
-app.get('/tick-chart-stream/:eventTypes', (req, res) => {
+app.get('/tick-chart-stream/:eventTypes/:ric', (req, res) => {
   const resultObject = new Transform({
     readableObjectMode: true,
     writableObjectMode: true,
@@ -68,7 +77,7 @@ app.get('/tick-chart-stream/:eventTypes', (req, res) => {
   var config = {
     responseType: 'stream',
     method: 'get',
-    url: 'https://api.refinitiv.com/data/historical-pricing/v1/views/events/BH.BK?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
+    url: 'https://api.refinitiv.com/data/historical-pricing/v1/views/events/' + req.params.ric + '?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
     headers: { 
       'Authorization': token,
       'x-ts-accept-chunks': 'application/json',
@@ -175,6 +184,103 @@ app.get('/tick-chart-stream/:eventTypes', (req, res) => {
 
     // TODO: For multiple time response
     streamToString(response.data).then(r => res.end());
+  })
+  .catch(function (error) {
+    console.log('<stream>', error);
+    res.send(error)
+  });
+})
+
+app.get('/tick-chart-stream-test/:eventTypes/:ric', (req, res) => {
+  const resultObject = new Transform({
+    readableObjectMode: true,
+    writableObjectMode: true,
+    transform(chunk, encoding, callback) {
+      this.push(chunk);
+      callback();
+    }
+  });
+
+  var axios = require('axios');
+  const baseUrl = 'https://api.refinitiv.com';
+  var config = {
+    responseType: 'stream',
+    method: 'get',
+    url: baseUrl + '/data/historical-pricing/v1/views/events/' + req.params.ric + '?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
+    headers: { 
+      'Authorization': token,
+      'x-ts-accept-chunks': 'application/json',
+    }
+  };
+
+  axios(config)
+  .then(async function (response) {
+    console.log('<stream> Success response......');
+
+    function streamToString (stream) {
+      const chunks = [];
+      return new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => {
+          console.log('<streamToString>', 'data');
+          chunks.push(Buffer.from(chunk))
+        });
+        stream.on('error', (err) => {
+          console.log('<streamToString>', 'error');
+          reject(err)
+        });
+        stream.on('end', () => {
+          console.log('<streamToString>', 'end');
+          resolve(Buffer.concat(chunks).toString('utf8'))
+        });
+      })
+    }
+
+    const result = JSON.parse(await streamToString(response.data));
+    console.log('result', result);
+    res.write(JSON.stringify(result))
+    res.write('\r\n----------------------------------\r\n')
+
+    // call onprem again
+    const nextUrl = result.map(r => r?.meta?.next).filter(r => r);
+    console.log('nextUrl', nextUrl);
+
+    // can get directry
+    const chunktUrl = [];
+    result.map(r => {
+      r.chunks?.map(chunk => {
+        chunktUrl.push({
+          url: chunk.href,
+          start: chunk.chunkStart,
+        });
+      });
+    });
+    console.log('chunktUrl', chunktUrl);
+    const resultNexts = await Promise.all([...nextUrl.map(async (url) => {
+      console.log('url', url)
+      return await axios({
+        responseType: 'stream',
+        method: 'get',
+        url: baseUrl + url,
+        headers: { 
+          'Authorization': token,
+          'x-ts-accept-chunks': 'application/json',
+        },
+      }).then(async (r) => {
+        // response to FE
+        const temp = JSON.parse(await streamToString(r.data))
+        res.write(JSON.stringify(temp))
+        res.write('\r\n----------------------------------\r\n')
+
+        return temp;
+      });
+    })]);
+    console.log('resultNexts', resultNexts);
+
+    // result.push(...resultChunks, ...resultNexts);
+    // console.log('result', result);
+
+    // res.json(resultNexts)
+    res.end()
   })
   .catch(function (error) {
     console.log('<stream>', error);
@@ -311,6 +417,183 @@ app.get('/tick-chart-stream-x/:eventTypes', (req, res) => {
   });
 })
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`)
+})
+
+//initialize socket for the server
+const io = socketio(server, {
+  'transports': ['websocket', 'polling'],
+  allowEIO3: true,
+  cors: {// cors
+      origin: "*",
+      methods: ["GET"],
+      allowedHeaders: ["*"],
+      credentials: true
+  }
+})
+
+io.on('connect', socket => {
+  console.log("New user connected")
+  socket.on('disconnect', () => {
+      console.log("user disconnected")
+  })
+
+  socket.ric = ""
+  socket.on('change_ric', data => {
+      console.log('change_ric', data)
+      socket.ric = data.ric
+
+      io.sockets.emit('change_ric', {
+        data: 'Success',
+        ric: socket.ric
+      })
+  })
+
+  socket.type = ""
+  socket.on('change_type', data => {
+    console.log('change_type', data)
+    socket.type = data.type
+
+    io.sockets.emit('change_type', {
+      data: 'Success',
+      type: socket.type
+    })
+})
+
+  socket.on('query_ric', data => {
+    console.log('query_ric', data)
+    console.log('ric:', socket.ric);
+    console.log('type:', socket.type);
+
+  var axios = require('axios');
+  const baseUrl = 'https://api.refinitiv.com';
+  var config = {
+    responseType: 'stream',
+    method: 'get',
+    url: baseUrl + '/data/historical-pricing/v1/views/events/' + socket.ric + '?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + socket.type,
+    headers: { 
+      'Authorization': token,
+      'x-ts-accept-chunks': 'application/json',
+    }
+  };
+
+  axios(config)
+  .then(async function (response) {
+    console.log('<stream> Success response......');
+
+    function streamToString (stream) {
+      const chunks = [];
+      return new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => {
+          console.log('<streamToString>', 'data');
+          chunks.push(Buffer.from(chunk))
+        });
+        stream.on('error', (err) => {
+          console.log('<streamToString>', 'error');
+          reject(err)
+        });
+        stream.on('end', () => {
+          console.log('<streamToString>', 'end');
+          resolve(Buffer.concat(chunks).toString('utf8'))
+        });
+      })
+    }
+
+    const result = JSON.parse(await streamToString(response.data));
+    
+    io.sockets.emit('query_ric', {
+      data: result,
+      type: 'main',
+    })
+    io.sockets.emit('query_ric', {
+      data: '----------------------------------',
+    })
+
+    // call onprem again
+    const nextUrl = result.map(r => r?.meta?.next).filter(r => r);
+    console.log('nextUrl', nextUrl);
+
+    // can get directry
+    const chunktUrl = [];
+    result.map(r => {
+      r.chunks?.map(chunk => {
+        chunktUrl.push({
+          url: chunk.href,
+          start: chunk.chunkStart,
+        });
+      });
+    });
+    console.log('chunktUrl', chunktUrl);
+
+    try {
+      const resultNexts = await Promise.all([...chunktUrl.map(async ({url}) => {
+        console.log('url', url)
+        return await axios({
+          method: 'get',
+          url,
+          headers: { 
+            'Authorization': token,
+          },
+        }).then((response) => {
+          // response to FE
+          const temp = response.data;
+          io.sockets.emit('query_ric', {
+            data: temp,
+            type: 'chunktUrl',
+          })
+  
+          io.sockets.emit('query_ric', {
+            data: '----------------------------------',
+          })
+    
+          return temp;
+        });
+      }), ...nextUrl.map(async (url) => {
+        console.log('url', url)
+        return await axios({
+          responseType: 'stream',
+          method: 'get',
+          url: baseUrl + url,
+          headers: { 
+            'Authorization': token,
+            'x-ts-accept-chunks': 'application/json',
+          },
+        }).then(async (r) => {
+          // response to FE
+          const temp = JSON.parse(await streamToString(r.data))
+          io.sockets.emit('query_ric', {
+            data: temp,
+            type: 'nextUrl',
+          })
+          io.sockets.emit('query_ric', {
+            data: '----------------------------------',
+          })
+  
+          return temp;
+        });
+      })]);
+    } catch (e) {
+      console.error(e);
+      io.sockets.emit('query_ric', {
+        error: {
+          object: error,
+        },
+      })
+    }
+
+    io.sockets.emit('query_ric', {
+      data: '----------------------------------',
+      type: 'finished'
+    })
+  })
+  .catch(function (error) {
+    io.sockets.emit('query_ric', {
+      error: {
+        status: error.response?.status,
+        object: error,
+      },
+    })
+  });
+})
 })

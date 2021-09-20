@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+
+<head>
+    <title>Simple realtime</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="title">
+            <h3>Realtime RIC</h3>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <b>
+                    <div id="hRic" style="color: brown;">RIC</div>
+                    ................
+                    <div id="hType" style="color: darkblue">TYPE</div>
+                </b>
+            </div>
+        </div>
+            <div class="card-body">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="ric" placeholder="Change your ric" value="BH.BK">
+                    <div class="input-group-append">
+                        <button class="btn btn-warning" type="button" id="ricBtn">Change</button>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="type" placeholder="Change your type" value="quote">
+                    <div class="input-group-append">
+                        <button class="btn btn-warning" type="button" id="typeBtn">Change</button>
+                    </div>
+                </div>
+            </div>
+            <div class="message-box">
+                <ul class="list-group list-group-flush" id="message-list"></ul>
+                <div class="info"></div>
+            </div>
+
+            <div class="card-footer">
+                <div class="input-group">
+                    <div class="input-group-append">
+                        <button class="btn btn-success" type="button" id="queryBtn">Query</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.4/socket.io.js"></script>
+    <script src="/js/web.js"></script>
+</body>
+
+</html>
