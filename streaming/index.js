@@ -8,6 +8,7 @@ const socketio = require('socket.io')
 const app = express()
 const port = 8080
 let token = '';
+const query = 'adjustments=exchangeCorrection&sessions=normal&qos=delayed&interval=PT1M';
 
 app.set('view engine', 'ejs')
 app.use(express.static('public'))
@@ -77,7 +78,7 @@ app.get('/tick-chart-stream/:eventTypes/:ric', (req, res) => {
   var config = {
     responseType: 'stream',
     method: 'get',
-    url: 'https://api.refinitiv.com/data/historical-pricing/v1/views/events/' + req.params.ric + '?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
+    url: 'https://api.refinitiv.com/data/historical-pricing/v1/views/events/' + req.params.ric + '?' + query + '&eventTypes=' + req.params.eventTypes,
     headers: { 
       'Authorization': token,
       'x-ts-accept-chunks': 'application/json',
@@ -206,7 +207,7 @@ app.get('/tick-chart-stream-test/:eventTypes/:ric', (req, res) => {
   var config = {
     responseType: 'stream',
     method: 'get',
-    url: baseUrl + '/data/historical-pricing/v1/views/events/' + req.params.ric + '?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
+    url: baseUrl + '/data/historical-pricing/v1/views/events/' + req.params.ric + '?' + query + '&eventTypes=' + req.params.eventTypes,
     headers: { 
       'Authorization': token,
       'x-ts-accept-chunks': 'application/json',
@@ -303,7 +304,7 @@ app.get('/tick-chart-stream-recursion/:eventTypes', (req, res) => {
   var config = {
     responseType: 'stream',
     method: 'get',
-    url: baseUrl + '/data/historical-pricing/v1/views/events/BH.BK?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
+    url: baseUrl + '/data/historical-pricing/v1/views/events/BH.BK?' + query + '&eventTypes=' + req.params.eventTypes,
     headers: { 
       'Authorization': token,
       'x-ts-accept-chunks': 'application/json',
@@ -396,7 +397,7 @@ app.get('/tick-chart-stream-x/:eventTypes', (req, res) => {
   var config = {
     responseType: 'stream',
     method: 'get',
-    url: 'https://api.refinitiv.com/data/historical-pricing/v1/views/events/BH.BK?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + req.params.eventTypes,
+    url: 'https://api.refinitiv.com/data/historical-pricing/v1/views/events/BH.BK?' + query + '&eventTypes=' + req.params.eventTypes,
     headers: { 
       'Authorization': token,
       'x-ts-accept-chunks': 'application/json',
@@ -471,7 +472,7 @@ io.on('connect', socket => {
   var config = {
     responseType: 'stream',
     method: 'get',
-    url: baseUrl + '/data/historical-pricing/v1/views/events/' + socket.ric + '?adjustments=exchangeCorrection&sessions=normal&count=1000&qos=delayed&interval=PT1M&eventTypes=' + socket.type,
+    url: baseUrl + '/data/historical-pricing/v1/views/events/' + socket.ric + '?' + query + '&eventTypes=' + socket.type,
     headers: { 
       'Authorization': token,
       'x-ts-accept-chunks': 'application/json',
@@ -481,6 +482,7 @@ io.on('connect', socket => {
   axios(config)
   .then(async function (response) {
     console.log('<stream> Success response......');
+    let count = 0;
 
     function streamToString (stream) {
       const chunks = [];
@@ -506,9 +508,18 @@ io.on('connect', socket => {
       data: result,
       type: 'main',
     })
-    io.sockets.emit('query_ric', {
-      data: '----------------------------------',
-    })
+
+    const sendPauseResponse = (result) => {
+      const countItems = result && result.map(r => r.data.length) || [];
+      io.sockets.emit('query_ric', {
+        data: '----------------------------------:' + result?.map(r => r.data.length),
+      })
+
+      countItems.map(len => {
+        count += len;
+      })
+    };
+    sendPauseResponse(result);
 
     // call onprem again
     const nextUrl = result.map(r => r?.meta?.next).filter(r => r);
@@ -543,9 +554,10 @@ io.on('connect', socket => {
             type: 'chunktUrl',
           })
   
-          io.sockets.emit('query_ric', {
-            data: '----------------------------------',
-          })
+          // io.sockets.emit('query_ric', {
+          //   data: '----------------------------------:' + temp?.map(r => r.data.length),
+          // })
+          sendPauseResponse(temp);
     
           return temp;
         });
@@ -566,9 +578,10 @@ io.on('connect', socket => {
             data: temp,
             type: 'nextUrl',
           })
-          io.sockets.emit('query_ric', {
-            data: '----------------------------------',
-          })
+          // io.sockets.emit('query_ric', {
+          //   data: '----------------------------------:' + temp?.map(r => r.data.length),
+          // })
+          sendPauseResponse(temp);
   
           return temp;
         });
@@ -583,7 +596,7 @@ io.on('connect', socket => {
     }
 
     io.sockets.emit('query_ric', {
-      data: '----------------------------------',
+      data: '----------------------------------::' + count,
       type: 'finished'
     })
   })
